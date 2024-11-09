@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, res: NextResponse) {
     ],
   });
 
-  return new NextResponse(completion.toReadableStream(), {
+  return new NextResponse<ReadableStream>(completion.toReadableStream(), {
     headers: {
       "Content-Type": "application/json",
       "Transfer-Encoding": "chunked",

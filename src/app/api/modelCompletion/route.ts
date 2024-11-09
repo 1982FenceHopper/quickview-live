@@ -5,6 +5,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const message = body["query"];
 
+  // Vercel Redeployment Stage, redeployment 1 occurred here.
   const client = new Groq({
     apiKey: process.env.GROQ_API_KEY,
   });

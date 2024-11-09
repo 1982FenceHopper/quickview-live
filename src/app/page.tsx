@@ -1,101 +1,157 @@
-import Image from "next/image";
+"use client";
+
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Github, SendHorizonal } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
+interface MessageDefinition {
+  role: string;
+  message: string;
+  isStreaming: boolean;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [messages, setMessages] = useState<Array<MessageDefinition>>([]);
+  const [input, setInput] = useState<string>("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+  const renderMarkdown = (markdown: string) => {
+    const rawHtml = marked(markdown);
+    const cleanHtml = DOMPurify.sanitize(rawHtml as string);
+    return { __html: cleanHtml };
+  };
+
+  const requestNewResponse = useCallback(async (input: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", message: "", isStreaming: true },
+    ]);
+
+    const response = await fetch("/api/modelCompletion", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: input }),
+    });
+
+    if (!response.body) return;
+
+    let buffer = "";
+
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader();
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value) {
+        buffer += value;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.trim() === "") continue;
+          try {
+            const jsonData = JSON.parse(line);
+            if (jsonData.choices[0].finish_reason != null) {
+              break;
+            } else {
+              setMessages((prev) =>
+                prev.map((msg, index) =>
+                  index === prev.length - 1
+                    ? {
+                        ...msg,
+                        message:
+                          msg.message + jsonData.choices[0].delta.content,
+                      }
+                    : msg
+                )
+              );
+            }
+          } catch (error) {
+            console.error("Error parsing JSON:", error);
+          }
+        }
+      }
+    }
+
+    setMessages((prev) =>
+      prev.map((msg, index) =>
+        index === prev.length - 1 ? { ...msg, isStreaming: false } : msg
+      )
+    );
+  }, []);
+
+  const handleUserMessage = (input: string) => {
+    const newData: MessageDefinition = {
+      role: "user",
+      message: input,
+      isStreaming: false,
+    };
+
+    setMessages((prev: MessageDefinition[]) => [...prev, newData]);
+    requestNewResponse(input);
+  };
+
+  return (
+    <div className="flex flex-col min-w-screen min-h-screen overflow-clip p-2">
+      <div className="inline-flex  border-b-[1px] py-2 px-8 align-middle">
+        <div className="font-bold text-2xl grow">QuickView Chat</div>
+        <Button variant={"ghost"} className="border-[1px] rounded-md">
+          <Github size={16} />
+          GitHub
+        </Button>
+      </div>
+      <ScrollArea className="mt-4 rounded-md border-[1px] w-full min-h-[72vh] p-4">
+        {messages &&
+          messages.map((_v, _i) => (
+            <div
+              key={_i}
+              className="rounded-md border-[1px] max-w-[48vw] p-4 mb-2"
+            >
+              <div className="font-bold text-xl mb-2">{_v.role}:</div>
+              {_v.isStreaming ? (
+                <div className="bg-muted p-2 rounded-md border-[1px] border-[#6c6c6c]">
+                  <pre>{_v.message}</pre>
+                  <span className="animate-pulse">▌</span>
+                </div>
+              ) : (
+                <div
+                  className="bg-muted p-2 rounded-md border-[1px] border-[#6c6c6c]"
+                  dangerouslySetInnerHTML={renderMarkdown(_v.message)}
+                />
+              )}
+            </div>
+          ))}
+      </ScrollArea>
+      <div className="mt-2 grid gap-2">
+        <Textarea
+          placeholder="Say something..."
+          className=""
+          ref={textareaRef}
+          onInputCapture={(e) => {
+            // @ts-expect-error For some reason, it can't retrieve all attributes for e.target
+            setInput(e.target.value);
+          }}
+        />
+        <Button
+          onClickCapture={() => {
+            handleUserMessage(input);
+            textareaRef.current!.value = "";
+          }}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <SendHorizonal size={16} />
+          Send
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function POST(req: NextRequest, res: NextResponse) {
+export async function POST(req: NextRequest) {
   const body = await req.json();
   const message = body["query"];
 
@@ -21,7 +20,7 @@ export async function POST(req: NextRequest, res: NextResponse) {
     ],
   });
 
-  return new Response(completion.toReadableStream(), {
+  return new NextResponse(completion.toReadableStream(), {
     headers: {
       "Content-Type": "application/json",
       "Transfer-Encoding": "chunked",
